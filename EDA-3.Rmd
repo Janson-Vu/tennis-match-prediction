@@ -1,0 +1,36 @@
+---
+title: "EDA-3"
+author: "Hong Duc Vu"
+date: "2026-03-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(tidyverse)
+df <- readRDS("./cleaned_data/2026-04-26-atp_matches_best_of_3_ELO.rds")
+df <- as.tibble(df)
+
+df <- df %>% 
+  mutate(match_outcome = case_when(
+    # player 1 win scenarios
+    (match_outcome == "WWW") ~ "WW",
+    (match_outcome == "WWL") ~  "WW",
+    (match_outcome == "WLW") ~  "WLW",
+    (match_outcome == "LWW") ~  "LWW",
+    
+    # player 1 loss scenarios
+    (match_outcome == "LLW") ~ "LL",
+    (set1_diff <=0 & set2_diff > 0 & set3_diff <=0) ~ "LWL",
+    (set1_diff > 0 & set2_diff <=0 & set3_diff <=0) ~ "WLL",
+    (match_outcome == "LLL") ~ "LL"
+  )) %>%
+  mutate(match_outcome = as.factor(match_outcome))
+
+filenamepath <- glue::glue("./cleaned_data/{lubridate::today()}-atp_matches_best_of_3_ELO.rds")
+write_rds(df,filenamepath)
+```
+

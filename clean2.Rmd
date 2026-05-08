@@ -1,0 +1,108 @@
+
+
+```{r}
+pacman::p_load(tidyverse, tidymodels, skimr)
+
+df <- readRDS("~/Documents/Master/Year1/Tri3/Research/code/cleaned_data/2025-10-05-atp_matches_all.rds")
+
+small_df <- df[1:10,]
+
+
+```
+
+# handle set score, tie break score, and tie break winner
+```{r}
+
+# remove 'RET' string from score results
+# remove trailing space at start, ends and internal whitespace w/ single space
+df <- df %>%
+  mutate(score = str_remove_all(score, "(RET|DEF)")) %>%
+  mutate(score = str_squish(score)) %>%
+  select(-c(tourney_id, tourney_level, draw_size, winner_ioc, loser_ioc, winner_id, loser_id))
+
+# get scores of all match
+score_string <- df$score
+# get the scores of all sets (i.e. match 9, set 1 score := sets[[9]][1])
+sets <- str_split(score_string, "\\s+")
+
+df <- df %>% 
+  mutate(
+    set_1 = rep(NA, nrow(df)),
+    set_2 = rep(NA, nrow(df)),
+    set_3 = rep(NA, nrow(df)),
+    set_4 = rep(NA, nrow(df)),
+    set_5 = rep(NA, nrow(df)),
+    
+    w_set1 = rep(NA, nrow(df)),
+    l_set1 = rep(NA, nrow(df)),
+    tb_set1 = rep(NA, nrow(df)),
+    tb_win_set1 = rep(NA, nrow(df)),
+    
+    w_set2 = rep(NA, nrow(df)),
+    l_set2 = rep(NA, nrow(df)),
+    tb_set2 = rep(NA, nrow(df)),
+    tb_win_set2 = rep(NA, nrow(df)),
+  
+    w_set3 = rep(NA, nrow(df)),
+    l_set3 = rep(NA, nrow(df)),
+    tb_set3 = rep(NA, nrow(df)),
+    tb_win_set3 = rep(NA, nrow(df)),
+    
+    w_set4 = rep(NA, nrow(df)),
+    l_set4 = rep(NA, nrow(df)),
+    tb_set4 = rep(NA, nrow(df)),
+    tb_win_set4 = rep(NA, nrow(df)),
+    
+    w_set5 = rep(NA, nrow(df)),
+    l_set5 = rep(NA, nrow(df)),
+    tb_set5 = rep(NA, nrow(df)),
+    tb_win_set5 = rep(NA, nrow(df)),
+  )
+
+df <- df %>%
+  # split the scores into set: 1,2,3,4,5
+  mutate(
+    set_1 = map_chr(sets, ~ .x[1]),
+    set_2 = map_chr(sets, ~ ifelse(length(.x) >= 2, .x[2], NA_character_)),
+    set_3 = map_chr(sets, ~ ifelse(length(.x) >= 3, .x[3], NA_character_)),
+    set_4 = map_chr(sets, ~ ifelse(length(.x) >= 4, .x[4], NA_character_)),
+    set_5 = map_chr(sets, ~ ifelse(length(.x) >= 4, .x[5], NA_character_))
+  ) %>%
+  # split the set score into winner points, loser points and 
+  # tiebreak points and who (winner or loser of match) won tiebreak
+  mutate(
+    w_set1  = as.numeric(str_extract(set_1, "^\\d+")),
+    l_set1  = as.numeric(str_extract(set_1, "(?<=-)\\d+")),
+    tb_set1 = as.numeric(str_extract(set_1, "(?<=\\()\\d+(?=\\))")),
+    
+    w_set2  = as.numeric(str_extract(set_2, "^\\d+")),
+    l_set2  = as.numeric(str_extract(set_2, "(?<=-)\\d+")),
+    tb_set2 = as.numeric(str_extract(set_2, "(?<=\\()\\d+(?=\\))")),
+
+    w_set3  = as.numeric(str_extract(set_3, "^\\d+")),
+    l_set3  = as.numeric(str_extract(set_3, "(?<=-)\\d+")),
+    tb_set3 = as.numeric(str_extract(set_3, "(?<=\\()\\d+(?=\\))")),
+
+    w_set4  = as.numeric(str_extract(set_4, "^\\d+")),
+    l_set4  = as.numeric(str_extract(set_4, "(?<=-)\\d+")),
+    tb_set4 = as.numeric(str_extract(set_4, "(?<=\\()\\d+(?=\\))")),
+    
+    w_set5 = as.numeric(str_extract(set_5, "^\\d+")),
+    l_set5 = as.numeric(str_extract(set_5, "(?<=-)\\d+")),
+    tb_set5 = as.numeric(str_extract(set_5, "(?<=\\()\\d+(?=\\))")),
+  ) %>%
+  mutate(
+    tb_win_set1 = ifelse( !is.na(tb_set1), ifelse(w_set1 > l_set1, "winner", "loser"), NA),
+    tb_win_set2 = ifelse( !is.na(tb_set2), ifelse(w_set2 > l_set2, "winner", "loser"), NA),
+    tb_win_set3 = ifelse( !is.na(tb_set3), ifelse(w_set3 > l_set3, "winner", "loser"), NA),
+    tb_win_set4 = ifelse( !is.na(tb_set4), ifelse(w_set4 > l_set4, "winner", "loser"), NA),
+    tb_win_set5 = ifelse( !is.na(tb_set5), ifelse(w_set5 > l_set5, "winner", "loser"), NA),
+  )
+
+```
+
+```{r}
+filenamepath <- glue::glue("./cleaned_data/{lubridate::today()}-atp_matches_all.rds")
+write_rds(df,filenamepath)
+```
+

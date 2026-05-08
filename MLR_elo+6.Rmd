@@ -1,0 +1,250 @@
+---
+title: "MLR_elo+6"
+author: "Hong Duc Vu"
+date: "2026-04-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(tidyverse, tidymodels, skimr, VGAM, MASS, hardhat)
+```
+
+# Multinomial Logistic Regression
+
+```{r}
+df <- readRDS("./cleaned_data/2026-04-26-atp_matches_best_of_3_ELO.rds")
+
+df <- df %>%
+  mutate(
+    surface = as.factor(surface),
+    player1_hand = as.factor(player1_hand),
+    player2_hand = as.factor(player2_hand),
+    set1_diff = as.numeric(set1_diff),
+  ) %>%
+  drop_na(match_outcome) %>%
+  mutate(match_outcome = factor(match_outcome))
+
+```
+
+# Split data into train / test set
+```{r}
+set.seed(42)
+df_split <- initial_split(df, prop=0.8)
+df_train <- training(df_split)
+df_test  <- testing(df_split)
+
+# cross-validation folds
+df_folds <- vfold_cv(df_train, strata = match_outcome)
+```
+
+```{r}
+df_train %>% nrow()
+df_test %>% nrow()
+```
+
+
+# Recipe
+```{r}
+mult_nom_recipe <- 
+  recipe(
+    match_outcome ~ rank_diff + elo_diff + age_diff + ht_diff + 
+      surface + player1_hand + player2_hand,
+    data = df_train
+  ) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  # step_zv() %>%
+  # step_lincomb() %>%
+  step_center(rank_diff, elo_diff, age_diff, ht_diff)
+
+```
+
+
+# Prep and bake recipe
+```{r}
+train_prep <- mult_nom_recipe %>% prep() %>% bake(new_data = NULL)
+test_prep  <- mult_nom_recipe %>% prep() %>% bake(new_data = df_test)
+
+```
+
+
+# Fit Multinomial Logistic Regression (nnet)
+```{r}
+# model
+multi_lr_model <- multinom_reg() %>%
+  set_mode("classification") %>%
+  set_engine("nnet", Hess = TRUE)
+
+# workflow
+multi_lr_wf <- workflow() %>%
+  add_recipe(mult_nom_recipe)  %>%
+  add_model(multi_lr_model)
+
+# cross-validation 
+multi_lr_resamples <- fit_resamples(
+  multi_lr_wf,
+  resamples = df_folds,
+  control = control_resamples(save_pred = TRUE)
+)
+
+```
+
+
+```{r}
+multi_lr_resamples %>% collect_metrics()
+```
+
+```{r}
+# predict on test set
+mult_lr_test <- multi_lr_wf %>%
+  last_fit(split = df_split) %>% 
+  collect_predictions()
+```
+
+
+# Metrics on TEST set
+```{r}
+
+# --- Accuracy ---
+acc <- multi_lr_wf %>%
+  last_fit(split = df_split) %>% 
+  collect_metrics() %>% 
+  filter(.metric == "accuracy") %>% pull(.estimate)
+acc
+```
+
+
+```{r}
+cm <- mult_lr_test %>% conf_mat(estimate = .pred_class, truth = match_outcome)
+cm
+```
+
+```{r}
+# Per-class accuracy
+per_class_accuracy <- diag(cm[[1]]) / colSums(cm[[1]])
+per_class_accuracy
+```
+
+
+```{r}
+# --- Calibration ---
+# 1. Pivot only the probability columns
+calibration_df <- mult_lr_test %>%
+  mutate(actual = as.character(match_outcome)) %>% 
+  pivot_longer(
+    cols = c(`.pred_LL`, `.pred_LWL`, `.pred_LWW`, `.pred_WLL`, `.pred_WLW`, `.pred_WW`),
+    names_to = "class",
+    values_to = "prob"
+  ) %>%
+  mutate(
+    class = gsub(".pred_", "", class),  # convert ".pred_LL" → "LL"
+    class = as.character(class)
+  )
+
+# 2. Compute multi-class calibration
+multi_calibration <- calibration_df %>%
+  group_by(class) %>%
+  summarise(
+    observed = sum(actual == class),
+    total_pred_prob = sum(prob),
+    calibration = total_pred_prob / observed
+  )
+
+multi_calibration
+```
+
+```{r}
+# # --- Log-loss ---
+# # N := #matches
+# N <- set1_mult_lr_test %>% nrow()
+# 
+# # y := actual outcome of set 1
+# y <- as.numeric(set1_mult_lr_test$set1_diff_cat)
+# # pi := probability that player with higher rank will win
+# pi <- set1_mult_lr_test$pred_class_prob
+# 
+# # Log-loss
+# log_loss <- (-1) / N * sum(y * log(pi) + (1-y)*log(1-pi))
+
+```
+
+```{r}
+# ---- Step 1: Reshape to long format ----
+logloss_df <- mult_lr_test %>%
+  mutate(actual = as.character(match_outcome)) %>%
+  pivot_longer(
+    cols = c(`.pred_LL`, `.pred_LWL`, `.pred_LWW`, `.pred_WLL`, `.pred_WLW`, `.pred_WW`),
+    names_to = "class",
+    values_to = "prob"
+  ) %>%
+  mutate(
+    class = gsub(".pred_", "", class)  # ".pred_LL" → "LL"
+  )
+
+# ---- Step 2: Keep only rows where class == actual ----
+true_class_prob <- logloss_df %>%
+  filter(class == actual)
+
+# ---- Step 3: Compute multi-class log loss ----
+N <- nrow(mult_lr_test)
+
+log_loss <- - mean(log(true_class_prob$prob))
+log_loss
+```
+
+
+
+```{r}
+mult_nom_metrics = tibble(
+  metric = c("accuracy", "calibration", "log-loss"),
+  estimate = c(acc, mean(multi_calibration$calibration), log_loss)
+)
+
+mult_nom_metrics
+```
+
+```{r}
+pacman::p_load(broom)
+
+wf_fit <- multi_lr_wf %>%
+  last_fit(split = df_split)
+
+model <- wf_fit$.workflow[[1]] %>%
+  extract_fit_parsnip() %>%
+  pluck("fit")
+
+
+coefs <- coef(model)
+
+# Variance-covariance matrix
+vcov_mat <- vcov(model)
+
+# Standard errors
+ses <- sqrt(diag(vcov_mat))
+
+# reshape SEs to match coef structure if multinomial
+ses_matrix <- matrix(ses, nrow = nrow(coefs), byrow = TRUE)
+
+# z and p-values
+z_vals <- coefs / ses_matrix
+p_vals <- 2 * (1 - pnorm(abs(z_vals)))
+
+
+results <- as.data.frame(coefs) %>%
+  mutate(class = rownames(coefs)) %>%
+  pivot_longer(-class, names_to = "term", values_to = "estimate") %>%
+  mutate(
+    std.error = as.vector(ses),
+    z = estimate / std.error,
+    p.value = 2 * (1 - pnorm(abs(z)))
+  )
+
+results
+```
+```{r}
+temp <- results %>% filter(`p.value` < 0.05)
+```
+

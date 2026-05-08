@@ -1,0 +1,130 @@
+---
+title: "cleaning"
+author: "Hong Duc Vu"
+date: "2025-09-22"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Load libraries
+```{r}
+pacman::p_load(
+  tidyverse, 
+  tidymodels, 
+  skimr, 
+  naniar,
+  inspect_df,
+  purr,
+  readr
+  )
+
+```
+
+
+Read in data
+```{r}
+match_2017 <- read_csv("./data/atp_matches_2017.csv")
+match_2017
+```
+
+
+```{r}
+skim(match_2017)
+
+vis_miss(match_2017)
+```
+
+drop columns with too many NAs
+```{r}
+match_2017 <- match_2017 %>% 
+  select(-c(
+    winner_entry, loser_entry, 
+    winner_seed, loser_seed
+  ))
+```
+
+
+visualise missing data
+```{r}
+vis_miss(match_2017)
+skim(match_2017)
+```
+
+drop NA rows
+```{r}
+match_2017 <- match_2017 %>% drop_na()
+skim(match_2017)
+```
+
+```{r}
+match_2017 <- match_2017 %>% 
+  mutate(
+    tourney_name = as.factor(tourney_name),
+    )
+
+temp <- match_2017 %>%
+     group_by(tourney_name) %>%
+     summarise(n = n(), .groups = "drop") %>% group_by(n) %>% arrange(n)
+
+  
+```
+
+```{r}
+filenamepath <- glue::glue("./cleaned_data/{lubridate::today()}-atp_matches_2017.rds")
+write_rds(match_2017,filenamepath)
+```
+
+
+```{r}
+match_2017 <- readRDS("./cleaned_data/2025-09-22-atp_matches_2017.rds")
+match_2017
+skim(match_2017)
+
+```
+
+
+how many matches per player in 2017 atp matches
+```{r}
+temp <- match_2017 %>% group_by(winner_name) %>% summarise(n_matches = n()) %>% arrange(by_group = n_matches)
+```
+
+
+# Aggregate and clean all 2009-2018 matches to 1 single CSV
+```{r}
+
+clean_csv <- function() {
+  
+  # get the files
+  data_dir <- "/Users/ducvu/Documents/Master/Year1/Tri3/Research/code/data"
+  files <- list.files(
+    path = data_dir, 
+    pattern = "atp_matches_20")
+  
+  # combine all rows of all csv files
+  all_matches <- map_dfr(
+    files, 
+    ~ read_csv(
+      file.path(data_dir, .x), 
+      show_col_types = FALSE))
+  
+  # remove winner_entry, loser_entry column due to too many missing
+  all_matches <- all_matches %>%
+    select(-c(winner_entry, loser_entry, winner_seed, loser_seed)) %>%
+    drop_na()
+  
+  return (all_matches)
+}
+
+df_all_matches <- clean_csv()
+
+# save to a RDS file
+filenamepath <- glue::glue("./cleaned_data/{lubridate::today()}-atp_matches_all.rds")
+write_rds(df_all_matches,filenamepath)
+```
+

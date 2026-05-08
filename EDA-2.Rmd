@@ -1,0 +1,41 @@
+---
+title: "EDA-2"
+author: "Hong Duc Vu"
+date: "2026-03-31"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(tidyverse, tidymodels, skimr, VGAM, MASS)
+```
+
+
+Convert match outcome to WW, WLW, LWW, LL, LWL, or WLL
+```{r}
+df <- readRDS("./cleaned_data/2026-04-26-atp_matches_best_of_3_ELO.rds")
+df <- as.tibble(df)
+
+df <- df %>% 
+  mutate(match_outcome = case_when(
+    # player 1 win scenarios
+    (set1_diff > 0 & set2_diff > 0 & set3_diff >= 0) ~ "WW",
+    (set1_diff > 0 & set2_diff <=0 & set3_diff > 0) ~ "WLW",
+    (set1_diff <=0 & set2_diff > 0 & set3_diff  >0) ~ "LWW",
+    
+    # player 1 loss scenarios
+    (set1_diff < 0 & set2_diff < 0  & set3_diff >= 0) ~ "LL",
+    (set1_diff <=0 & set2_diff > 0 & set3_diff <=0) ~ "LWL",
+    (set1_diff > 0 & set2_diff <=0 & set3_diff <=0) ~ "WLL"
+  )) %>%
+  mutate(match_outcome = as.factor(match_outcome))
+
+filenamepath <- glue::glue("./cleaned_data/{lubridate::today()}-atp_matches_best_of_3_ELO.rds")
+write_rds(df,filenamepath)
+
+```
+
+

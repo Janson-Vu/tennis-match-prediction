@@ -1,0 +1,83 @@
+---
+title: "EDA"
+author: "Hong Duc Vu"
+date: "2026-03-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+pacman::p_load(tidyverse, tidymodels, skimr, VGAM, MASS)
+```
+
+
+```{r}
+df <- readRDS("./cleaned_data/2026-04-26-atp_matches_best_of_3_ELO.rds")
+df_set_diff <- df %>% dplyr::select(set1_diff, set2_diff, set3_diff)
+df_set_outcome <- df %>% dplyr::select(set1_outcome, set2_outcome, set3_outcome)
+```
+
+
+### Heat map of set1_diff vs set2_diff
+```{r}
+ggplot(df, aes(x = set1_diff, y = set2_diff)) +
+  geom_bin2d() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal()
+```
+
+### Heatmap between set1_diff and set3_diff
+```{r}
+df_set_diff %>% filter(set3_diff == 0) %>% count()
+
+df_set_diff %>% 
+  filter(set3_diff != 0) %>%
+ggplot(aes(x = set1_diff, y = set3_diff)) +
+  geom_bin2d() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal()
+```
+
+### Heatmap between set2_diff and set3_diff
+
+```{r}
+df %>% 
+  filter(set3_diff != 0) %>%
+ggplot(aes(x = set2_diff, y = set3_diff)) +
+  geom_bin2d() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal()
+```
+
+### Heat map of set1_outcome vs set2_outcome
+```{r}
+ggplot(df_set_outcome, aes(x = set1_outcome, y = set2_outcome)) +
+  geom_bin2d() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal()
+```
+
+### Heat map of set1_outcome vs set3_outcome
+```{r}
+df %>% 
+  filter(set3_diff != 0) %>%
+ggplot(aes(x = set1_outcome, y = set3_outcome)) +
+  geom_bin2d() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal()
+```
+
+### Heat map of set2_outcome vs set3_outcome
+```{r}
+df %>% 
+  filter(set3_diff != 0)
+ggplot(df_set_outcome, aes(x = set2_outcome, y = set3_outcome)) +
+  geom_bin2d() +
+  scale_fill_gradient(low = "white", high = "red") +
+  theme_minimal()
+```
+
+
